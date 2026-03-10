@@ -3033,7 +3033,8 @@ function setupRoomUI(code) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // 현재 URL + ?room=CODE 로 QR 생성
-  const url = window.location.href.split('?')[0] + '?room=' + encodeURIComponent(code);
+  const baseUrl = 'https://hayeongshin407.github.io/disability-game';
+  const url = baseUrl + '?room=' + encodeURIComponent(code);
   drawQROnCanvas(canvas, url);
 }
 
