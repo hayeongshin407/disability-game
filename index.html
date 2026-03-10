@@ -2998,9 +2998,17 @@ async function createRoom() {
     if (window._fbReady && window._db) {
       const db = window._db;
       const roomRef = window._doc(db, 'rooms', code);
+
+      // 기존 players 데이터 전부 삭제
+      const oldPlayers = await window._getDocs(window._collection(db, 'rooms', code, 'players'));
+      const delPromises = [];
+      oldPlayers.forEach(d => delPromises.push(window._deleteDoc(d.ref)));
+      await Promise.all(delPromises);
+
+      // 방 문서 새로 덮어쓰기
       await window._setDoc(roomRef, {
         code: code,
-        status: 'waiting',   // waiting | playing | done
+        status: 'waiting',
         createdAt: window._serverTimestamp(),
         teacherActive: true,
       });
@@ -3293,40 +3301,56 @@ function listenGameStart(code) {
 
 // ── 학생: 방에서 게임 시작 ──
 function startGameFromRoom() {
-  // 기존 startGame() 로직을 활용하되 이름/반 정보를 MS에서 가져옴
   const name = MS.playerName;
-  const num  = MS.playerNum;
+  const num  = MS.playerNum || '';
+  const code = MS.roomCode || '';
+  const grade = code.split('-')[0] || '';
+  const cls   = code.split('-')[1] || '';
   if (!name) return;
 
-  // gs 초기화
-  gs.playerName = `${num ? num + '번 ' : ''}${name}`;
-  gs.grade = MS.roomCode.split('-')[0] || '';
-  gs.cls   = MS.roomCode.split('-')[1] || '';
-  gs.score = 0;
-  gs.pos = 0;
-  gs.turnsUsed = 0;
-  gs.wrongStreak = 0;
-  gs.usedQuestions = {};
-  gs.rankings = [];
-  gs.roomCode = MS.roomCode;
-  gs.playerId = MS.playerId;
+  const displayName = `${grade}-${cls} ${num ? num + '번 ' : ''}${name}`;
+  const shortName   = name;
 
-  document.getElementById('hud-name').textContent = name;
+  // gs 완전 초기화 (startGame과 동일 구조)
+  gs = {
+    playerName: displayName, shortName,
+    grade, cls, num,
+    position: 0, score: 0, laps: 0,
+    turnsUsed: 0, totalTurns: 30,
+    wrongStreak: 0, isJailed: false, jailTurns: 0, skipTurns: 0,
+    canReroll: false, freeReroll: false, currentDiff: null, currentQuiz: null,
+    stats: { correct:0, wrong:0, chance:0, laps:0, island:0 },
+    rankings: gs.rankings || [],
+    isRolling: false, pendingChance: null, pendingLap: false,
+    usedQuestions: {},
+    roomCode: MS.roomCode,
+    playerId: MS.playerId,
+  };
+
+  document.getElementById('hud-name').textContent = shortName;
   updateHUD();
-  buildBoard();
+  renderBoard();
   showScreen('game');
-  setRollBtn(false);
-  setActionStatus('주사위를 굴려 시작하세요!');
+  setActionStatus('주사위를 굴려 시작하세요! 🎲');
 
-  // Firebase 점수 업데이트 리스너 시작
-  if (window._fbReady && window._db && MS.playerId) {
+  requestAnimationFrame(() => {
+    const hud   = document.querySelector('.game-hud');
+    const panel = document.querySelector('.action-panel');
+    const totalH = (hud?.offsetHeight || 52) + (panel?.offsetHeight || 90) + 8;
+    const size = `min(99vw, calc(100dvh - ${totalH}px))`;
+    const board = document.getElementById('board');
+    if (board) { board.style.width = size; board.style.height = size; }
+  });
+
+  // Firebase 상태 업데이트
+  if (window._db && MS.playerId && MS.roomCode) {
     window._updateDoc(
       window._doc(window._db, 'rooms', MS.roomCode, 'players', MS.playerId),
       { status: 'playing' }
     ).catch(console.error);
   }
 
-  // 랭킹 수신 시작
+  // 실시간 랭킹 수신 시작
   listenRoomRankings();
 }
 
