@@ -1128,6 +1128,7 @@ body {
   <div class="waiting-name" id="waiting-name-display"></div>
   <div class="waiting-sub">선생님이 게임을 시작하면<br>자동으로 시작됩니다!</div>
   <div class="waiting-spinner"></div>
+  <div id="waiting-sub-status" style="font-size:.75rem;color:var(--muted);text-align:center;margin-top:.5rem;">연결 중...</div>
 </div>
 
 
@@ -3284,17 +3285,36 @@ async function joinRoom() {
 // ── 학생: 게임 시작 대기 ──
 function listenGameStart(code) {
   function startListening() {
-    if (!window._db) { setTimeout(startListening, 300); return; }
+    if (!window._db) {
+      setTimeout(startListening, 300);
+      return;
+    }
     const db = window._db;
     const roomRef = window._doc(db, 'rooms', code);
-    MS.unsubRoom = window._onSnapshot(roomRef, (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      if (data.status === 'playing') {
-        if (MS.unsubRoom) { MS.unsubRoom(); MS.unsubRoom = null; }
-        startGameFromRoom();
+
+    // 대기 화면에 상태 표시
+    const subEl = document.getElementById('waiting-sub-status');
+    if (subEl) subEl.textContent = '🔗 Firebase 연결됨 - 선생님 대기 중...';
+
+    MS.unsubRoom = window._onSnapshot(roomRef,
+      (snap) => {
+        if (!snap.exists()) {
+          if (subEl) subEl.textContent = '⚠️ 방을 찾을 수 없어요';
+          return;
+        }
+        const data = snap.data();
+        if (subEl) subEl.textContent = '상태: ' + data.status;
+        if (data.status === 'playing') {
+          if (MS.unsubRoom) { MS.unsubRoom(); MS.unsubRoom = null; }
+          startGameFromRoom();
+        }
+      },
+      (err) => {
+        if (subEl) subEl.textContent = '❌ 오류: ' + err.message;
+        // 3초 후 재시도
+        setTimeout(() => startListening(), 3000);
       }
-    });
+    );
   }
   startListening();
 }
