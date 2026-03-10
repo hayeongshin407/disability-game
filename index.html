@@ -3301,57 +3301,79 @@ function listenGameStart(code) {
 
 // ── 학생: 방에서 게임 시작 ──
 function startGameFromRoom() {
-  const name = MS.playerName;
-  const num  = MS.playerNum || '';
-  const code = MS.roomCode || '';
-  const grade = code.split('-')[0] || '';
-  const cls   = code.split('-')[1] || '';
-  if (!name) return;
+  try {
+    const name = MS.playerName;
+    const num  = MS.playerNum || '';
+    const code = MS.roomCode || '';
+    const grade = code.split('-')[0] || '';
+    const cls   = code.split('-')[1] || '';
+    if (!name) { alert('이름 정보가 없어요. 다시 접속해주세요.'); return; }
 
-  const displayName = `${grade}-${cls} ${num ? num + '번 ' : ''}${name}`;
-  const shortName   = name;
+    const displayName = `${grade}-${cls} ${num ? num + '번 ' : ''}${name}`;
+    const shortName   = name;
 
-  // gs 완전 초기화 (startGame과 동일 구조)
-  gs = {
-    playerName: displayName, shortName,
-    grade, cls, num,
-    position: 0, score: 0, laps: 0,
-    turnsUsed: 0, totalTurns: 30,
-    wrongStreak: 0, isJailed: false, jailTurns: 0, skipTurns: 0,
-    canReroll: false, freeReroll: false, currentDiff: null, currentQuiz: null,
-    stats: { correct:0, wrong:0, chance:0, laps:0, island:0 },
-    rankings: gs.rankings || [],
-    isRolling: false, pendingChance: null, pendingLap: false,
-    usedQuestions: {},
-    roomCode: MS.roomCode,
-    playerId: MS.playerId,
-  };
+    // 현재 rankings 백업
+    const prevRankings = (typeof gs !== 'undefined' && gs.rankings) ? gs.rankings : [];
 
-  document.getElementById('hud-name').textContent = shortName;
-  updateHUD();
-  renderBoard();
-  showScreen('game');
-  setActionStatus('주사위를 굴려 시작하세요! 🎲');
+    // gs 완전 초기화
+    gs = {
+      playerName: displayName, shortName,
+      grade, cls, num,
+      position: 0, score: 0, laps: 0,
+      turnsUsed: 0, totalTurns: 30,
+      wrongStreak: 0, isJailed: false, jailTurns: 0, skipTurns: 0,
+      canReroll: false, freeReroll: false, currentDiff: null, currentQuiz: null,
+      stats: { correct:0, wrong:0, chance:0, laps:0, island:0 },
+      rankings: prevRankings,
+      isRolling: false, pendingChance: null, pendingLap: false,
+      usedQuestions: {},
+      roomCode: MS.roomCode,
+      playerId: MS.playerId,
+    };
 
-  requestAnimationFrame(() => {
-    const hud   = document.querySelector('.game-hud');
-    const panel = document.querySelector('.action-panel');
-    const totalH = (hud?.offsetHeight || 52) + (panel?.offsetHeight || 90) + 8;
-    const size = `min(99vw, calc(100dvh - ${totalH}px))`;
-    const board = document.getElementById('board');
-    if (board) { board.style.width = size; board.style.height = size; }
-  });
+    // HUD 업데이트
+    const hudName = document.getElementById('hud-name');
+    if (hudName) hudName.textContent = shortName;
+    updateHUD();
 
-  // Firebase 상태 업데이트
-  if (window._db && MS.playerId && MS.roomCode) {
-    window._updateDoc(
-      window._doc(window._db, 'rooms', MS.roomCode, 'players', MS.playerId),
-      { status: 'playing' }
-    ).catch(console.error);
+    // 보드 렌더링
+    renderBoard();
+
+    // 화면 전환
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const gameScreen = document.getElementById('screen-game');
+    if (gameScreen) {
+      gameScreen.classList.add('active');
+      gameScreen.style.display = 'flex';
+    }
+
+    setActionStatus('주사위를 굴려 시작하세요! 🎲');
+
+    // 보드 사이즈 조정
+    setTimeout(() => {
+      const hud   = document.querySelector('.game-hud');
+      const panel = document.querySelector('.action-panel');
+      const totalH = (hud ? hud.offsetHeight : 52) + (panel ? panel.offsetHeight : 90) + 8;
+      const size = 'min(99vw, calc(100dvh - ' + totalH + 'px))';
+      const board = document.getElementById('board');
+      if (board) { board.style.width = size; board.style.height = size; }
+    }, 100);
+
+    // Firebase 상태 업데이트
+    if (window._db && MS.playerId && MS.roomCode) {
+      window._updateDoc(
+        window._doc(window._db, 'rooms', MS.roomCode, 'players', MS.playerId),
+        { status: 'playing' }
+      ).catch(function(e) { console.warn('status 업데이트 실패:', e); });
+    }
+
+    // 실시간 랭킹 수신 시작
+    listenRoomRankings();
+
+  } catch(e) {
+    console.error('startGameFromRoom 오류:', e);
+    alert('게임 시작 중 오류: ' + e.message);
   }
-
-  // 실시간 랭킹 수신 시작
-  listenRoomRankings();
 }
 
 // ── 학생: 방 내 랭킹 수신 ──
