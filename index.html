@@ -773,11 +773,19 @@ body {
 @keyframes moveToken { 0%{transform:scale(1)} 50%{transform:scale(1.5) translateY(-6px)} 100%{transform:scale(1)} }
 .token-moving { animation: moveToken .35s ease; }
 
+/* ══════════ COPYRIGHT ══════════ */
+.copyright {
+  font-size: .7rem; color: var(--muted); text-align: center;
+  padding: .5rem 0; opacity: .7; letter-spacing: .03em;
+  position: absolute; bottom: 1rem; left: 0; right: 0;
+}
+
 /* ══════════ MODE SELECT ══════════ */
 #screen-mode {
   height: 100%; display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  padding: 2rem 1.2rem; gap: 1.5rem;
+  padding: 2rem 1.2rem 3rem; gap: 1.5rem;
+  position: relative;
 }
 .mode-title {
   font-family: 'Jua', sans-serif; font-size: 1.8rem; text-align: center;
@@ -1024,6 +1032,7 @@ body {
       </div>
     </div>
   </div>
+  <div class="copyright">© 천안가온중학교 교사 신하영</div>
 </div>
 
 <!-- ══ TEACHER SETUP ══ -->
@@ -1097,6 +1106,23 @@ body {
   <div class="tr-rank-list" id="tr-rank-list">
     <div style="text-align:center;color:var(--muted);padding:2rem">
       게임 시작을 기다리는 중...
+    </div>
+  </div>
+
+  <!-- 재접속 QR 토글 -->
+  <div style="width:100%;max-width:600px;margin-top:.5rem">
+    <button onclick="toggleRejoinQR()" id="btn-rejoin-qr"
+      style="width:100%;padding:.7rem;background:rgba(61,123,255,.15);border:1.5px solid rgba(61,123,255,.3);
+      color:var(--primary);border-radius:12px;font-family:'Noto Sans KR',sans-serif;font-size:.85rem;
+      font-weight:700;cursor:pointer;transition:background .2s">
+      📱 재접속 QR코드 보이기
+    </button>
+    <div id="rejoin-qr-wrap" style="display:none;flex-direction:column;align-items:center;
+      gap:.7rem;padding:1rem;background:var(--surface);border-radius:14px;
+      border:1px solid var(--border);margin-top:.5rem">
+      <div style="font-size:.8rem;color:var(--muted)">중간에 나간 학생은 아래 QR로 재접속하세요</div>
+      <canvas id="rejoin-qr-canvas" width="160" height="160" style="border-radius:10px"></canvas>
+      <div style="font-family:'Jua',sans-serif;font-size:1.3rem;color:var(--primary);letter-spacing:.15em" id="rejoin-code-display"></div>
     </div>
   </div>
 </div>
@@ -2105,8 +2131,8 @@ async function rollDice() {
 
 async function movePlayer(steps) {
   for (let i = 0; i < steps; i++) {
-    // 시계 방향 = 숫자가 줄어드는 방향 (27→26→...→1→0→27→...)
-    gs.position = (gs.position - 1 + 28) % 28;
+    // 시계 방향 = 숫자가 늘어나는 방향 (0→1→2→...→27→0→...)
+    gs.position = (gs.position + 1) % 28;
     // 출발 칸(0) 통과 체크
     if (gs.position === 0) {
       gs.laps++;
@@ -2426,8 +2452,8 @@ function closeChance() {
   if (card.skip)       { gs.skipTurns += card.skip; }
   if (card.reroll)     { gs.freeReroll = true; }
   if (card.move !== 0) {
-    const newPos = (gs.position - card.move + 28) % 28;
-    if (card.move > 0 && newPos > gs.position) {
+    const newPos = (gs.position + card.move) % 28;
+    if (card.move > 0 && newPos < gs.position) {
       gs.laps++; gs.stats.laps++; gs.score += 50;
     }
     gs.position = newPos;
@@ -3145,6 +3171,31 @@ async function teacherStartGame() {
     btn.disabled = false;
     btn.textContent = '🚀 게임 시작!';
     alert('오류: ' + e.message);
+  }
+}
+
+// ── 선생님: 재접속 QR 토글 ──
+function toggleRejoinQR() {
+  const wrap = document.getElementById('rejoin-qr-wrap');
+  const btn  = document.getElementById('btn-rejoin-qr');
+  if (!wrap) return;
+
+  if (wrap.style.display === 'none') {
+    wrap.style.display = 'flex';
+    btn.textContent = '📱 재접속 QR코드 숨기기';
+
+    // QR 아직 안 그렸으면 그리기
+    const canvas = document.getElementById('rejoin-qr-canvas');
+    const codeEl = document.getElementById('rejoin-code-display');
+    if (codeEl) codeEl.textContent = MS.roomCode || '';
+    if (canvas && MS.roomCode) {
+      const baseUrl = 'https://hayeongshin407.github.io/disability-game';
+      const url = baseUrl + '?room=' + encodeURIComponent(MS.roomCode);
+      drawQROnCanvas(canvas, url);
+    }
+  } else {
+    wrap.style.display = 'none';
+    btn.textContent = '📱 재접속 QR코드 보이기';
   }
 }
 
