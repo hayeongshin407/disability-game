@@ -1153,14 +1153,14 @@ body {
   <div class="mode-title">♿ 장애인식개선<br>보드게임</div>
   <div class="mode-subtitle">역할을 선택해주세요</div>
   <div class="mode-cards">
-    <div class="mode-card teacher" onclick="unlockAudio(); enterTeacherMode()">
+    <div class="mode-card teacher" onclick="enterTeacherMode()">
       <div class="mode-icon">👨‍🏫</div>
       <div class="mode-info">
         <div class="mode-name" style="color:var(--gold)">선생님 모드</div>
         <div class="mode-desc">반 코드 생성 · 대기 명단 확인<br>게임 시작 · 실시간 랭킹 표시</div>
       </div>
     </div>
-    <div class="mode-card student" onclick="unlockAudio(); enterStudentMode()">
+    <div class="mode-card student" onclick="enterStudentMode()">
       <div class="mode-icon">🎮</div>
       <div class="mode-info">
         <div class="mode-name" style="color:var(--primary)">학생 모드</div>
@@ -1418,7 +1418,7 @@ body {
 <!-- ══ GAME ══ -->
 <div id="screen-game" class="screen">
   <div class="game-hud">
-    <button onclick="toggleMute()" id="btn-mute" style="background:none; border:none; font-size:1.2rem; cursor:pointer; margin-right:8px;">🔊</button><div class="hud-name" id="hud-name">-</div>
+    <div class="hud-name" id="hud-name">-</div>
     <div class="hud-score">⭐ <span id="hud-score">0</span>점</div>
     <div class="hud-info">
       <div class="hud-lap" id="hud-turns">턴 0 / 30</div>
@@ -1618,78 +1618,6 @@ body {
 //  0 = 출발, 7 = 무인도, 14 = 찬스, 21 = 황금칸
 //  나머지 = 퀴즈 칸 (카테고리 순환)
 // ══════════════════════════════════════════
-
-// ══════════════════════════════════════════
-//  통합 오디오 매니저 (개선형)
-// ══════════════════════════════════════════
-const audioCtx = {
-    isMuted: false,
-    bgm: null,
-    isFastBGM: false,
-    unlocked: false,
-    instances: {},
-    files: {
-        bgm_game: "https://assets.mixkit.co/music/preview/mixkit-happy-and-joyful-114.mp3",
-        bgm_fast: "https://assets.mixkit.co/music/preview/mixkit-epic-drums-and-claps-1864.mp3", 
-        bgm_result: "https://assets.mixkit.co/music/preview/mixkit-sun-and-sweet-6.mp3",
-        sfx_dice: "https://assets.mixkit.co/sfx/preview/mixkit-rolling-dice-2357.mp3",
-        sfx_walk: "https://assets.mixkit.co/sfx/preview/mixkit-footsteps-on-wooden-floor-522.mp3", 
-        sfx_correct: "https://assets.mixkit.co/sfx/preview/mixkit-correct-answer-reward-952.mp3",
-        sfx_wrong: "https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-946.mp3",
-        sfx_warn: "https://assets.mixkit.co/sfx/preview/mixkit-classic-short-alarm-993.mp3",
-        sfx_island: "https://assets.mixkit.co/sfx/preview/mixkit-horror-low-rumble-drone-2101.mp3",
-        sfx_cheer: "https://assets.mixkit.co/sfx/preview/mixkit-stadium-crowd-cheer-484.mp3",
-        sfx_fail: "https://assets.mixkit.co/sfx/preview/mixkit-disappointed-crowd-unenthusiastic-612.mp3",
-        sfx_clock: "https://assets.mixkit.co/sfx/preview/mixkit-mechanical-clock-tick-1050.mp3"
-    }
-};
-
-// 브라우저 오디오 제한 해제
-async function unlockAudio() {
-    if (audioCtx.unlocked) return;
-    for (const key in audioCtx.files) {
-        const a = new Audio(audioCtx.files[key]);
-        a.volume = 0;
-        try {
-            await a.play();
-            a.pause();
-            a.currentTime = 0;
-            audioCtx.instances[key] = a;
-        } catch(e) {}
-    }
-    audioCtx.unlocked = true;
-    console.log("Audio Unlocked");
-}
-
-function playSFX(key) {
-    if (audioCtx.isMuted) return;
-    const audio = new Audio(audioCtx.files[key]);
-    audio.volume = (key === 'sfx_cheer' || key === 'sfx_island') ? 0.3 : 0.5;
-    audio.play().catch(e => console.warn("SFX Blocked:", e));
-}
-
-function playBGM(key) {
-    if (audioCtx.bgm) audioCtx.bgm.pause();
-    audioCtx.bgm = new Audio(audioCtx.files[key]);
-    audioCtx.bgm.loop = true;
-    audioCtx.bgm.volume = 0.3;
-    if (!audioCtx.isMuted) {
-        audioCtx.bgm.play().catch(e => console.warn("BGM Blocked:", e));
-    }
-}
-
-function stopBGM() {
-    if (audioCtx.bgm) audioCtx.bgm.pause();
-}
-
-function toggleMute() {
-    audioCtx.isMuted = !audioCtx.isMuted;
-    const btn = document.getElementById('btn-mute');
-    if (btn) btn.textContent = audioCtx.isMuted ? "🔇" : "🔊";
-    if (audioCtx.isMuted && audioCtx.bgm) audioCtx.bgm.pause();
-    else if (!audioCtx.isMuted && audioCtx.bgm) audioCtx.bgm.play().catch(() => {});
-}
-
 const CATEGORIES = [
   { name:"장애 에티켓",   emoji:"🤝", key:"장애인 에티켓" },
   { name:"장애 특성",     emoji:"🧩", key:"장애 특성" },
@@ -2301,7 +2229,6 @@ async function rollDice() {
   if (gs.turnsUsed >= gs.totalTurns) { endGame(); return; }
 
   gs.isRolling = true;
-  playSFX('sfx_dice');
   setRollBtn(true);
 
   if (!gs.freeReroll) {
@@ -2410,7 +2337,6 @@ async function movePlayer(steps) {
   for (let i = 0; i < steps; i++) {
     // 시계 방향 = 숫자가 늘어나는 방향 (0→1→2→...→27→0→...)
     gs.position = (gs.position + 1) % 28;
-    playSFX('sfx_walk');
     // 출발 칸(0) 통과 체크
     if (gs.position === 0) {
       gs.laps++;
@@ -2596,11 +2522,9 @@ function spinRoulette() {
         gs.score += seg.pts;
         updateHUD();
         resultEl.textContent = `🎉 ${seg.pts}점 획득!`;
-        playSFX('sfx_cheer');
         resultEl.style.color = 'var(--green)';
       } else {
         resultEl.textContent = '😢 꽝! 아쉽네요...';
-        playSFX('sfx_fail');
         resultEl.style.color = 'var(--red)';
       }
       okBtn.style.display   = 'block';
@@ -2841,12 +2765,9 @@ function answerQuiz(chosen) {
     gs.score += pts;
     gs.wrongStreak = 0;
     gs.stats.correct++;
-    playSFX('sfx_correct');
   } else {
     gs.wrongStreak++;
     gs.stats.wrong++;
-    playSFX('sfx_wrong');
-    if (gs.wrongStreak === 2) playSFX('sfx_warn');
     if (gs.wrongStreak >= 3) {
       // 차별의 늪으로!
       document.getElementById('btn-next').textContent = '⛓️ 차별의 늪으로...';
@@ -2892,8 +2813,6 @@ const PLEDGES = [
 let _islandCards = [];
 
 function sendToIsland() {
-  if (audioCtx.bgm) audioCtx.bgm.volume = 0.1;
-  playSFX('sfx_island');
   gs.position = 7; // 차별의 늪 칸
   gs.isJailed  = false; // 카드 선택 후 결과로 처리
   gs.stats.island++;
@@ -2983,7 +2902,6 @@ function selectPledge(btn, idx) {
 }
 
 function closeIsland() {
-  if (audioCtx.bgm) audioCtx.bgm.volume = 0.3;
   if (_selectedPledge === false &&
       document.getElementById('pledge-section').style.display === 'block') {
     alert('장애인 차별 방지 실천 다짐을 1가지 선택해주세요!');
@@ -3218,14 +3136,7 @@ function updateHUD() {
     stk.className = 'hud-streak';
   }
   // Firebase 점수 실시간 동기화
-  
   syncScoreToFirebase();
-  const remaining = gs.totalTurns - gs.turnsUsed;
-  if (remaining <= 5 && remaining > 0) {
-    if (!audioCtx.isFastBGM) { playBGM('bgm_fast'); audioCtx.isFastBGM = true; }
-    playSFX('sfx_clock');
-  }
-
 }
 
 function setActionStatus(msg, cls='') {
@@ -3246,10 +3157,6 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = document.getElementById('screen-' + id);
   if (el) el.classList.add('active');
-
-  if (id === 'game') { audioCtx.isFastBGM = false; playBGM('bgm_game'); }
-  else if (id === 'result') { playBGM('bgm_result'); }
-  else if (id === 'intro' || id === 'mode') { stopBGM(); }
 }
 
 function goHome() {
@@ -3469,7 +3376,6 @@ function drawQROnCanvas(canvas, text) {
 
 // ── 선생님: 대기명단 실시간 수신 ──
 function listenWaitlist(code) {
-  if (!code) return;
   if (!window._fbReady || !window._db) return;
   const db = window._db;
   const playersRef = window._collection(db, 'rooms', code, 'players');
@@ -3845,7 +3751,6 @@ function toggleRejoinQR() {
 
 // ── 선생님: 실시간 랭킹 수신 ──
 function listenTeacherRanking(code) {
-  if (!code) return;
   if (!window._fbReady || !window._db) return;
   const db = window._db;
   const playersRef = window._collection(db, 'rooms', code, 'players');
@@ -3990,7 +3895,6 @@ async function joinRoom() {
 
 // ── 학생: 게임 시작 대기 ──
 function listenGameStart(code) {
-  if (!code) return;
   function startListening() {
     if (!window._db) {
       setTimeout(startListening, 300);
