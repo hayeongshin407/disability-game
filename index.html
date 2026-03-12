@@ -1646,7 +1646,11 @@ function playSFX(key) {
     if (audioCtx.isMuted) return;
     const audio = new Audio(audioCtx.files[key]);
     audio.volume = (key === 'sfx_cheer' || key === 'sfx_island') ? 0.3 : 0.5;
-    audio.play().catch(() => {});
+    
+    // .play() 뒤에 오류 로그 추가
+    audio.play().catch(e => {
+        console.warn("오디오 재생 거부됨 (사용자 상호작용 필요):", e);
+    });
 }
 
 function playBGM(key) {
@@ -3225,18 +3229,19 @@ function openModal(id)  { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  const el = document.getElementById('screen-' + id);
-  if (el) el.classList.add('active');
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const el = document.getElementById('screen-' + id);
+    if (el) el.classList.add('active');
 
-  if (id === 'game') {
-    audioCtx.isFastBGM = false;
-    playBGM('bgm_game');
-  } else if (id === 'result') {
-    playBGM('bgm_result');
-  } else if (id === 'intro' || id === 'mode') {
-    stopBGM();
-  }
+    // [중요] 사용자가 클릭했을 때 BGM 재생 시도
+    if (id === 'game') {
+        audioCtx.isFastBGM = false;
+        playBGM('bgm_game');
+    } else if (id === 'result') {
+        playBGM('bgm_result');
+    } else {
+        stopBGM();
+    }
 }
 
 function goHome() {
