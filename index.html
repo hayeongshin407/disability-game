@@ -1153,14 +1153,14 @@ body {
   <div class="mode-title">♿ 장애인식개선<br>보드게임</div>
   <div class="mode-subtitle">역할을 선택해주세요</div>
   <div class="mode-cards">
-    <div class="mode-card teacher" onclick="enterTeacherMode()">
+    <div class="mode-card teacher" onclick="unlockAudio(); enterTeacherMode()">
       <div class="mode-icon">👨‍🏫</div>
       <div class="mode-info">
         <div class="mode-name" style="color:var(--gold)">선생님 모드</div>
         <div class="mode-desc">반 코드 생성 · 대기 명단 확인<br>게임 시작 · 실시간 랭킹 표시</div>
       </div>
     </div>
-    <div class="mode-card student" onclick="enterStudentMode()">
+    <div class="mode-card student" onclick="unlockAudio(); enterStudentMode()">
       <div class="mode-icon">🎮</div>
       <div class="mode-info">
         <div class="mode-name" style="color:var(--primary)">학생 모드</div>
@@ -1620,12 +1620,14 @@ body {
 // ══════════════════════════════════════════
 
 // ══════════════════════════════════════════
-//  통합 오디오 매니저 (BGM/SFX)
+//  통합 오디오 매니저 (개선형)
 // ══════════════════════════════════════════
 const audioCtx = {
     isMuted: false,
     bgm: null,
     isFastBGM: false,
+    unlocked: false,
+    instances: {},
     files: {
         bgm_game: "https://assets.mixkit.co/music/preview/mixkit-happy-and-joyful-114.mp3",
         bgm_fast: "https://assets.mixkit.co/music/preview/mixkit-epic-drums-and-claps-1864.mp3", 
@@ -1642,15 +1644,28 @@ const audioCtx = {
     }
 };
 
+// 브라우저 오디오 제한 해제
+async function unlockAudio() {
+    if (audioCtx.unlocked) return;
+    for (const key in audioCtx.files) {
+        const a = new Audio(audioCtx.files[key]);
+        a.volume = 0;
+        try {
+            await a.play();
+            a.pause();
+            a.currentTime = 0;
+            audioCtx.instances[key] = a;
+        } catch(e) {}
+    }
+    audioCtx.unlocked = true;
+    console.log("Audio Unlocked");
+}
+
 function playSFX(key) {
     if (audioCtx.isMuted) return;
     const audio = new Audio(audioCtx.files[key]);
     audio.volume = (key === 'sfx_cheer' || key === 'sfx_island') ? 0.3 : 0.5;
-    
-    // .play() 뒤에 오류 로그 추가
-    audio.play().catch(e => {
-        console.warn("오디오 재생 거부됨 (사용자 상호작용 필요):", e);
-    });
+    audio.play().catch(e => console.warn("SFX Blocked:", e));
 }
 
 function playBGM(key) {
@@ -1658,7 +1673,9 @@ function playBGM(key) {
     audioCtx.bgm = new Audio(audioCtx.files[key]);
     audioCtx.bgm.loop = true;
     audioCtx.bgm.volume = 0.3;
-    if (!audioCtx.isMuted) audioCtx.bgm.play().catch(() => {});
+    if (!audioCtx.isMuted) {
+        audioCtx.bgm.play().catch(e => console.warn("BGM Blocked:", e));
+    }
 }
 
 function stopBGM() {
@@ -3201,14 +3218,11 @@ function updateHUD() {
     stk.className = 'hud-streak';
   }
   // Firebase 점수 실시간 동기화
+  
   syncScoreToFirebase();
-  // 긴장감 연출
   const remaining = gs.totalTurns - gs.turnsUsed;
   if (remaining <= 5 && remaining > 0) {
-    if (!audioCtx.isFastBGM) {
-      playBGM('bgm_fast');
-      audioCtx.isFastBGM = true;
-    }
+    if (!audioCtx.isFastBGM) { playBGM('bgm_fast'); audioCtx.isFastBGM = true; }
     playSFX('sfx_clock');
   }
 
@@ -3229,19 +3243,13 @@ function openModal(id)  { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 function showScreen(id) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    const el = document.getElementById('screen-' + id);
-    if (el) el.classList.add('active');
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById('screen-' + id);
+  if (el) el.classList.add('active');
 
-    // [중요] 사용자가 클릭했을 때 BGM 재생 시도
-    if (id === 'game') {
-        audioCtx.isFastBGM = false;
-        playBGM('bgm_game');
-    } else if (id === 'result') {
-        playBGM('bgm_result');
-    } else {
-        stopBGM();
-    }
+  if (id === 'game') { audioCtx.isFastBGM = false; playBGM('bgm_game'); }
+  else if (id === 'result') { playBGM('bgm_result'); }
+  else if (id === 'intro' || id === 'mode') { stopBGM(); }
 }
 
 function goHome() {
@@ -3259,8 +3267,6 @@ function closeRestartConfirm() {
 }
 
 async function confirmRestart() {
-  audioCtx.isFastBGM = false;
-  stopBGM();
   closeRestartConfirm();
 
   // 멀티 모드(학생)일 때 Firebase 기록 삭제
@@ -3463,6 +3469,7 @@ function drawQROnCanvas(canvas, text) {
 
 // ── 선생님: 대기명단 실시간 수신 ──
 function listenWaitlist(code) {
+  if (!code) return;
   if (!window._fbReady || !window._db) return;
   const db = window._db;
   const playersRef = window._collection(db, 'rooms', code, 'players');
@@ -3838,6 +3845,7 @@ function toggleRejoinQR() {
 
 // ── 선생님: 실시간 랭킹 수신 ──
 function listenTeacherRanking(code) {
+  if (!code) return;
   if (!window._fbReady || !window._db) return;
   const db = window._db;
   const playersRef = window._collection(db, 'rooms', code, 'players');
@@ -3982,6 +3990,7 @@ async function joinRoom() {
 
 // ── 학생: 게임 시작 대기 ──
 function listenGameStart(code) {
+  if (!code) return;
   function startListening() {
     if (!window._db) {
       setTimeout(startListening, 300);
