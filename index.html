@@ -1424,6 +1424,11 @@ body {
       <div class="hud-lap" id="hud-turns">턴 0 / 30</div>
       <div class="hud-streak" id="hud-streak"></div>
     </div>
+    <button id="btn-mute" onclick="toggleMute()" style="
+      background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);
+      color:var(--text);border-radius:8px;padding:.25rem .5rem;
+      font-size:1rem;cursor:pointer;flex-shrink:0;line-height:1;
+      transition:background .15s;" title="음소거 토글">🔊</button>
   </div>
 
   <div class="board-wrap">
@@ -1613,6 +1618,298 @@ body {
 </div>
 
 <script>
+// ══════════════════════════════════════════
+//  🔊 음향 시스템 (Web Audio API)
+// ══════════════════════════════════════════
+const SFX = (() => {
+  let ctx = null;
+  let bgmNode = null, bgmGain = null;
+  let masterGain = null;
+  let muted = false;
+
+  function getCtx() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = ctx.createGain();
+      masterGain.gain.value = 1;
+      masterGain.connect(ctx.destination);
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  // 기본 oscillator 헬퍼
+  function play(freq, type, duration, gainVal=0.3, delay=0) {
+    if (muted) return;
+    const c = getCtx();
+    const osc = c.createOscillator();
+    const g   = c.createGain();
+    osc.connect(g); g.connect(masterGain);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, c.currentTime + delay);
+    g.gain.setValueAtTime(0, c.currentTime + delay);
+    g.gain.linearRampToValueAtTime(gainVal, c.currentTime + delay + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + delay + duration);
+    osc.start(c.currentTime + delay);
+    osc.stop(c.currentTime + delay + duration + 0.05);
+  }
+
+  // 노이즈 헬퍼 (딸깍, 굴리기)
+  function noise(duration, gainVal=0.15, delay=0) {
+    if (muted) return;
+    const c = getCtx();
+    const bufSize = c.sampleRate * duration;
+    const buf = c.createBuffer(1, bufSize, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const g = c.createGain();
+    const filter = c.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 800;
+    src.connect(filter); filter.connect(g); g.connect(masterGain);
+    g.gain.setValueAtTime(gainVal, c.currentTime + delay);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + delay + duration);
+    src.start(c.currentTime + delay);
+    src.stop(c.currentTime + delay + duration + 0.05);
+  }
+
+  return {
+    // ── 배경음악 (밝고 신나는 루프) ──
+    startBGM() {
+      if (muted || bgmNode) return;
+      const c = getCtx();
+      bgmGain = c.createGain();
+      bgmGain.gain.value = 0.12;
+      bgmGain.connect(masterGain);
+
+      // 간단한 멜로디 패턴 (도레미파솔라시도)
+      const notes = [523, 587, 659, 698, 784, 880, 988, 1047];
+      const pattern = [0,2,4,2,0,4,2,0, 4,5,4,2,0,2,4,5];
+      const bpm = 128;
+      const beat = 60 / bpm;
+
+      let startTime = c.currentTime + 0.1;
+      let loopCount = 0;
+
+      const scheduleLoop = () => {
+        pattern.forEach((noteIdx, i) => {
+          const freq = notes[noteIdx];
+          const t = startTime + i * beat * 0.5;
+          const osc = c.createOscillator();
+          const g   = c.createGain();
+          osc.connect(g); g.connect(bgmGain);
+          osc.type = 'triangle';
+          osc.frequency.value = freq;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.6, t + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, t + beat * 0.45);
+          osc.start(t);
+          osc.stop(t + beat * 0.5);
+
+          // 베이스라인
+          if (i % 4 === 0) {
+            const bass = c.createOscillator();
+            const bg   = c.createGain();
+            bass.connect(bg); bg.connect(bgmGain);
+            bass.type = 'sine';
+            bass.frequency.value = notes[noteIdx] / 2;
+            bg.gain.setValueAtTime(0, t);
+            bg.gain.linearRampToValueAtTime(0.4, t + 0.02);
+            bg.gain.exponentialRampToValueAtTime(0.001, t + beat * 1.8);
+            bass.start(t);
+            bass.stop(t + beat * 2);
+          }
+        });
+
+        startTime += pattern.length * beat * 0.5;
+        loopCount++;
+        bgmNode = setTimeout(scheduleLoop, (pattern.length * beat * 0.5 - 0.3) * 1000);
+      };
+      scheduleLoop();
+    },
+
+    stopBGM() {
+      if (bgmNode) { clearTimeout(bgmNode); bgmNode = null; }
+      if (bgmGain) {
+        try {
+          bgmGain.gain.linearRampToValueAtTime(0, getCtx().currentTime + 0.5);
+        } catch(e) {}
+        setTimeout(() => { bgmGain = null; }, 600);
+      }
+    },
+
+    fadeBGM(targetVol, duration=1.0) {
+      if (!bgmGain) return;
+      const c = getCtx();
+      bgmGain.gain.linearRampToValueAtTime(targetVol, c.currentTime + duration);
+    },
+
+    // ── 주사위 굴리기 (딸그락 소리) ──
+    diceRoll() {
+      if (muted) return;
+      for (let i = 0; i < 8; i++) {
+        noise(0.06, 0.2, i * 0.08);
+        play(200 + Math.random()*300, 'square', 0.05, 0.1, i * 0.08);
+      }
+    },
+
+    // ── 주사위 결과 (짧은 팡파레) ──
+    diceResult() {
+      play(523, 'triangle', 0.12, 0.3);
+      play(659, 'triangle', 0.12, 0.3, 0.13);
+      play(784, 'triangle', 0.18, 0.3, 0.26);
+    },
+
+    // ── 말 이동 (틱틱 발자국) ──
+    tokenMove() {
+      noise(0.04, 0.12);
+      play(400, 'square', 0.04, 0.08);
+    },
+
+    // ── 정답 (밝은 팡파레) ──
+    correct() {
+      play(523, 'triangle', 0.1, 0.35);
+      play(659, 'triangle', 0.1, 0.35, 0.1);
+      play(784, 'triangle', 0.1, 0.35, 0.2);
+      play(1047,'triangle', 0.25, 0.4,  0.3);
+      // 반짝이 효과
+      [0.45, 0.5, 0.55].forEach((d,i) => play(1200+i*100, 'sine', 0.08, 0.15, d));
+    },
+
+    // ── 오답 (낮은 버저) ──
+    wrong() {
+      play(220, 'sawtooth', 0.08, 0.4);
+      play(180, 'sawtooth', 0.12, 0.4, 0.1);
+      play(150, 'sawtooth', 0.18, 0.35, 0.22);
+      noise(0.2, 0.08, 0.1);
+    },
+
+    // ── 찬스 카드 (두근두근 신비) ──
+    chance() {
+      [0,0.15,0.3,0.45].forEach((d,i) => {
+        play(400 + i*80, 'sine', 0.12, 0.2, d);
+      });
+      play(800, 'triangle', 0.2, 0.25, 0.6);
+      play(1000,'triangle', 0.15, 0.2,  0.75);
+    },
+
+    // ── 찬스 카드 멈추기 ──
+    chanceStop() {
+      noise(0.08, 0.3);
+      play(600, 'square', 0.06, 0.3);
+      play(800, 'triangle', 0.12, 0.35, 0.07);
+    },
+
+    // ── 찬스 결과 좋음 ──
+    chanceGood() {
+      play(659, 'triangle', 0.1, 0.3);
+      play(784, 'triangle', 0.1, 0.3, 0.1);
+      play(988, 'triangle', 0.2, 0.35, 0.2);
+    },
+
+    // ── 찬스 결과 나쁨 ──
+    chanceBad() {
+      play(300, 'sawtooth', 0.15, 0.3);
+      play(250, 'sawtooth', 0.2,  0.3, 0.15);
+    },
+
+    // ── 바퀴 완주 (화려한 팡파레) ──
+    lapComplete() {
+      const melody = [
+        [523,0],[659,0.1],[784,0.2],[1047,0.3],
+        [988,0.45],[784,0.55],[1047,0.65],[1047,0.85]
+      ];
+      melody.forEach(([f,d]) => play(f, 'triangle', 0.15, 0.4, d));
+      // 드럼 느낌
+      [0, 0.3, 0.6].forEach(d => noise(0.08, 0.25, d));
+      // 반짝임
+      [1.0,1.1,1.2,1.3].forEach((d,i) => play(1200+i*150,'sine',0.1,0.2,d));
+    },
+
+    // ── 황금칸 룰렛 시작 ──
+    rouletteStart() {
+      play(784, 'triangle', 0.15, 0.35);
+      play(988, 'triangle', 0.15, 0.35, 0.15);
+      play(1175,'triangle', 0.2,  0.35, 0.3);
+    },
+
+    // ── 룰렛 회전 중 (틱틱) ──
+    rouletteTick() {
+      play(900, 'square', 0.02, 0.15);
+    },
+
+    // ── 룰렛 결과 좋음 ──
+    rouletteWin() {
+      [523,659,784,1047,1319].forEach((f,i) => play(f,'triangle',0.12,0.4,i*0.1));
+      [0.6,0.7,0.8,0.9].forEach((d,i)=>play(1200+i*100,'sine',0.08,0.2,d));
+    },
+
+    // ── 룰렛 꽝 ──
+    rouletteFail() {
+      play(300,'sawtooth',0.1,0.35);
+      play(250,'sawtooth',0.15,0.35,0.12);
+      play(200,'sawtooth',0.2,0.3,0.26);
+      noise(0.15, 0.1, 0.1);
+    },
+
+    // ── 차별의 늪 입장 (으스스) ──
+    islandEnter() {
+      play(220,'sawtooth',0.3,0.3);
+      play(233,'sawtooth',0.3,0.25,0.05);
+      play(196,'sine',0.5,0.2,0.1);
+      noise(0.3, 0.12, 0.15);
+      [0.4,0.6,0.8].forEach(d=>play(150+Math.random()*50,'sawtooth',0.15,0.15,d));
+    },
+
+    // ── 카드 뒤집기 ──
+    cardFlip() {
+      noise(0.05, 0.2);
+      play(500, 'triangle', 0.06, 0.2);
+      play(700, 'triangle', 0.04, 0.15, 0.04);
+    },
+
+    // ── 게임 종료 (웅장한 엔딩) ──
+    gameEnd() {
+      const fanfare = [
+        [392,0],[523,0.2],[659,0.4],[784,0.6],
+        [1047,0.9],[988,1.2],[784,1.4],[1047,1.7]
+      ];
+      fanfare.forEach(([f,d]) => play(f,'triangle',0.25,0.45,d));
+      // 베이스
+      [[196,0],[261,0.6],[392,1.2]].forEach(([f,d])=>play(f,'sine',0.4,0.3,d));
+      // 드럼
+      [0,0.4,0.8,1.2,1.6].forEach(d=>noise(0.1,0.3,d));
+    },
+
+    // ── UI 클릭 ──
+    click() {
+      play(600, 'sine', 0.05, 0.15);
+    },
+
+    // ── 배려 쉼터 ──
+    restLand() {
+      play(523,'sine',0.15,0.2);
+      play(659,'sine',0.2,0.2,0.15);
+      play(784,'sine',0.25,0.2,0.3);
+    },
+
+    // ── 음소거 토글 ──
+    toggleMute() {
+      muted = !muted;
+      if (muted) {
+        this.stopBGM();
+      } else {
+        getCtx();
+      }
+      return muted;
+    },
+
+    isMuted() { return muted; },
+  };
+})();
+
 // ══════════════════════════════════════════
 //  말판 정의 (28칸 - 인덱스 0~27)
 //  0 = 출발, 7 = 무인도, 14 = 찬스, 21 = 황금칸
@@ -2144,6 +2441,7 @@ function startGame() {
   renderBoard();
   showScreen('game');
   setActionStatus('주사위를 굴려 시작하세요! 🎲');
+  SFX.startBGM();
 
   requestAnimationFrame(() => {
     const hud    = document.querySelector('.game-hud');
@@ -2259,6 +2557,7 @@ async function rollDice() {
   resultNum.className = 'dice-result-num';
   resultNum.textContent = '';
   overlay.classList.add('show');
+  SFX.diceRoll(); // 🎲 주사위 굴리기 소리
 
   // 굴리는 애니메이션: 빠르게 여러 숫자 보여주다가 최종값에 멈춤
   const totalFrames = 28;
@@ -2319,6 +2618,7 @@ async function rollDice() {
 
   resultNum.textContent = `🎲 ${roll}칸 이동!`;
   resultNum.classList.add('visible');
+  SFX.diceResult(); // 🎵 결과 효과음
   await sleep(900);
 
   overlay.classList.remove('show');
@@ -2337,6 +2637,7 @@ async function movePlayer(steps) {
   for (let i = 0; i < steps; i++) {
     // 시계 방향 = 숫자가 늘어나는 방향 (0→1→2→...→27→0→...)
     gs.position = (gs.position + 1) % 28;
+    SFX.tokenMove(); // 👣 발자국 소리
     // 출발 칸(0) 통과 체크
     if (gs.position === 0) {
       gs.laps++;
@@ -2344,6 +2645,7 @@ async function movePlayer(steps) {
       gs.score += 50;
       renderBoard();
       await sleep(180);
+      SFX.lapComplete(); // 🎉 완주 팡파레
       showLapBonus(gs.laps, 50);
       return; // 랩 보너스 모달에서 이후 처리
     }
@@ -2360,17 +2662,18 @@ function handleLanding() {
   const cell = BOARD_DATA[gs.position];
 
   if (cell.type === 'start') {
-    // 출발 칸 정확히 도착 (이미 통과 처리 됨 - 이 케이스는 없지만 안전장치)
     endTurn();
   } else if (cell.type === 'rest') {
-    // 배려 쉼터 - 1턴 쉬고 소소한 메시지
+    SFX.restLand(); // 🌿 배려 쉼터
     setActionStatus('🌿 배려 쉼터! 잠시 쉬어가요. 1턴 정지', 'island');
     gs.skipTurns = 1;
     endTurn();
   } else if (cell.type === 'chance') {
     gs.stats.chance++;
+    SFX.chance(); // ❓ 찬스 효과음
     triggerChance();
   } else if (cell.type === 'gold') {
+    SFX.rouletteStart(); // 💰 황금칸
     openGoldRoulette();
   } else if (cell.type === 'quiz') {
     openQuizModal(cell);
@@ -2501,10 +2804,21 @@ function spinRoulette() {
     return 1 - Math.pow(1 - t, 4);
   }
 
+  let _lastTickAngle = 0;
+  const _tickInterval = (Math.PI * 2) / ROULETTE_SEGMENTS.length;
+
   function animate(now) {
     const elapsed = now - startTime;
     const t = Math.min(elapsed / duration, 1);
     const current = startAngle + (endAngle - startAngle) * easeOut(t);
+
+    // 구간 경계 통과 시 틱 소리
+    const ticksPassed = Math.floor(Math.abs(current - _lastTickAngle) / _tickInterval);
+    if (ticksPassed > 0) {
+      SFX.rouletteTick();
+      _lastTickAngle = current;
+    }
+
     _rouletteAngle = current;
     drawRoulette(current);
 
@@ -2521,9 +2835,11 @@ function spinRoulette() {
       if (seg.pts > 0) {
         gs.score += seg.pts;
         updateHUD();
+        SFX.rouletteWin(); // 🎉 룰렛 당첨
         resultEl.textContent = `🎉 ${seg.pts}점 획득!`;
         resultEl.style.color = 'var(--green)';
       } else {
+        SFX.rouletteFail(); // 😢 꽝
         resultEl.textContent = '😢 꽝! 아쉽네요...';
         resultEl.style.color = 'var(--red)';
       }
@@ -2624,6 +2940,7 @@ function chanceStop() {
   if (_chStopped) return;
   _chStopped = true;
   clearInterval(_chInterval);
+  SFX.chanceStop(); // ⏸ 멈추기 효과음
 
   document.getElementById('btn-chance-stop').disabled = true;
 
@@ -2650,6 +2967,10 @@ function closeChance() {
   closeModal('chance-modal');
   clearInterval(_chInterval);
   if (!card) { endTurn(); return; }
+
+  // 찬스 결과 효과음
+  if (card.type === 'plus' || card.move > 0) SFX.chanceGood();
+  else if (card.type === 'minus' || card.move < 0) SFX.chanceBad();
 
   if (card.value > 0)  { gs.score += card.value; }
   if (card.value < 0)  { gs.score = Math.max(0, gs.score + card.value); }
@@ -2762,10 +3083,12 @@ function answerQuiz(chosen) {
   resEl.style.display = 'block';
 
   if (isRight) {
+    SFX.correct(); // ✅ 정답 효과음
     gs.score += pts;
     gs.wrongStreak = 0;
     gs.stats.correct++;
   } else {
+    SFX.wrong(); // ❌ 오답 효과음
     gs.wrongStreak++;
     gs.stats.wrong++;
     if (gs.wrongStreak >= 3) {
@@ -2814,9 +3137,10 @@ let _islandCards = [];
 
 function sendToIsland() {
   gs.position = 7; // 차별의 늪 칸
-  gs.isJailed  = false; // 카드 선택 후 결과로 처리
+  gs.isJailed  = false;
   gs.stats.island++;
   renderBoard();
+  SFX.islandEnter(); // ⛓️ 차별의 늪 효과음
 
   // 카드 3장 구성 랜덤 배치
   _islandCards = shuffle([
@@ -2856,6 +3180,7 @@ function flipIslandCard(idx) {
   if (wrap.classList.contains('flipped')) return; // 이미 선택됨
 
   // 뒤집기
+  SFX.cardFlip(); // 🃏 카드 뒤집기
   wrap.classList.add('flipped');
 
   // 나머지 카드 선택 불가
@@ -2946,6 +3271,8 @@ function endTurn() {
 // 게임 종료
 async function endGame() {
   setRollBtn(true);
+  SFX.stopBGM();       // BGM 정지
+  SFX.gameEnd();       // 🏆 엔딩 팡파레
   await saveRanking(gs.playerName, gs.score, gs.laps, gs.stats);
   showResultScreen();
 }
@@ -3159,7 +3486,14 @@ function showScreen(id) {
   if (el) el.classList.add('active');
 }
 
+function toggleMute() {
+  const muted = SFX.toggleMute();
+  const btn = document.getElementById('btn-mute');
+  if (btn) btn.textContent = muted ? '🔇' : '🔊';
+}
+
 function goHome() {
+  SFX.stopBGM();
   showScreen('intro');
   renderRankings('rank-list-intro');
 }
@@ -3175,6 +3509,7 @@ function closeRestartConfirm() {
 
 async function confirmRestart() {
   closeRestartConfirm();
+  SFX.stopBGM(); // BGM 정지
 
   // 멀티 모드(학생)일 때 Firebase 기록 삭제
   if (window._db && MS.playerId && MS.roomCode) {
@@ -3259,11 +3594,13 @@ function msShowScreen(id) {
 
 // ── 모드 선택 ──
 function enterTeacherMode() {
+  SFX.click();
   MS.mode = 'teacher';
   msShowScreen('teacher');
 }
 
 function enterStudentMode() {
+  SFX.click();
   MS.mode = 'student';
   // URL 파라미터로 반코드가 있으면 자동 채우기 (QR 스캔 시)
   const params = new URLSearchParams(window.location.search);
@@ -3712,6 +4049,7 @@ function renderTeacherFinal(players) {
 }
 
 function teacherGoHome() {
+  SFX.stopBGM();
   // MS 상태 초기화
   MS.mode = null; MS.roomCode = null;
   if (MS.unsubRoom)    { MS.unsubRoom();    MS.unsubRoom    = null; }
@@ -3979,8 +4317,7 @@ function startGameFromRoom() {
     }
 
     setActionStatus('주사위를 굴려 시작하세요! 🎲');
-
-    // 보드 사이즈 조정
+    SFX.startBGM(); // 🎵 BGM 시작 (학생 멀티모드)
     setTimeout(() => {
       const hud   = document.querySelector('.game-hud');
       const panel = document.querySelector('.action-panel');
