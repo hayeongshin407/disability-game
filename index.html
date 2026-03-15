@@ -3175,6 +3175,7 @@ function closeRestartConfirm() {
 
 async function confirmRestart() {
   closeRestartConfirm();
+  const prevRoomCode = MS.roomCode;
 
   // 멀티 모드(학생)일 때 Firebase 기록 삭제
   if (window._db && MS.playerId && MS.roomCode) {
@@ -3192,10 +3193,11 @@ async function confirmRestart() {
     if (MS.unsubPlayers) { MS.unsubPlayers(); MS.unsubPlayers = null; }
   }
 
-  // 멀티 모드면 모드 선택 화면으로, 혼자 플레이면 인트로로
+  // 학생은 다시하기 시 학생 접속 화면으로만 이동 (선생님 모드 접근 방지)
   if (MS.mode === 'student') {
-    MS.mode = null;
-    msShowScreen('mode');
+    const codeInput = document.getElementById('join-code-input');
+    if (codeInput && prevRoomCode) codeInput.value = prevRoomCode;
+    msShowScreen('join');
   } else {
     goHome();
   }
@@ -3244,6 +3246,14 @@ const MS = {
   unsubRoom: null,     // 실시간 리스너 해제 함수
   unsubPlayers: null,
 };
+
+function countQuestionsFromQB(qb) {
+  if (!qb || typeof qb !== 'object') return 0;
+  return Object.values(qb).reduce((catAcc, cat) => {
+    if (!cat || typeof cat !== 'object') return catAcc;
+    return catAcc + Object.values(cat).reduce((qAcc, arr) => qAcc + (Array.isArray(arr) ? arr.length : 0), 0);
+  }, 0);
+}
 
 // ── 공통 유틸 ──
 function msShowScreen(id) {
@@ -3295,11 +3305,14 @@ async function createRoom() {
       await Promise.all(delPromises);
 
       // 방 문서 새로 덮어쓰기
+      const customQuizCount = countQuestionsFromQB(_activeQB);
       await window._setDoc(roomRef, {
         code: code,
         status: 'waiting',
         createdAt: window._serverTimestamp(),
         teacherActive: true,
+        customQuiz: _activeQB || null,
+        customQuizCount,
       });
       MS.roomCode = code;
       setupRoomUI(code);
@@ -3483,8 +3496,7 @@ async function processQuizFile(file) {
 
   try {
     const qb = await parseQuizExcel(file);
-    const totalCount = Object.values(qb).reduce((acc, cat) =>
-      acc + Object.values(cat).reduce((a, arr) => a + arr.length, 0), 0);
+    const totalCount = countQuestionsFromQB(qb);
 
     if (totalCount === 0) {
       setUploadStatus('❌ 유효한 문제가 없어요. 양식을 확인해주세요.', 'var(--red)');
@@ -3495,6 +3507,14 @@ async function processQuizFile(file) {
     _activeQB = qb;
     showQuizActiveInfo(file.name, totalCount);
     setUploadStatus(`🎉 완료! ${totalCount}개 문제가 이번 수업에 반영됩니다`, 'var(--green)');
+
+    // 이미 방이 생성된 경우, 학생들에게 즉시 반영되도록 Firebase에 동기화
+    if (window._db && MS.roomCode) {
+      await window._updateDoc(
+        window._doc(window._db, 'rooms', MS.roomCode),
+        { customQuiz: qb, customQuizCount: totalCount }
+      );
+    }
 
   } catch(e) {
     console.error(e);
@@ -3560,6 +3580,13 @@ function clearCustomQuiz() {
   document.getElementById('quiz-active-info').style.display = 'none';
   document.getElementById('quiz-upload-text').textContent = '엑셀 파일을 선택하거나 여기에 끌어다 놓으세요';
   setUploadStatus('✅ 기본 문제로 되돌렸어요', 'var(--green)');
+
+  if (window._db && MS.roomCode) {
+    window._updateDoc(
+      window._doc(window._db, 'rooms', MS.roomCode),
+      { customQuiz: null, customQuizCount: 0 }
+    ).catch(e => console.warn('기본 문제 복원 동기화 실패:', e));
+  }
 }
 
 // ── UI 유틸 ──
@@ -3914,6 +3941,7 @@ function listenGameStart(code) {
           return;
         }
         const data = snap.data();
+        _activeQB = data.customQuiz || null;
         if (subEl) subEl.textContent = '상태: ' + data.status;
         if (data.status === 'playing') {
           if (MS.unsubRoom) { MS.unsubRoom(); MS.unsubRoom = null; }
