@@ -3617,7 +3617,6 @@ async function confirmRestart() {
         window._doc(window._db, 'rooms', MS.roomCode, 'players', MS.playerId)
       );
     } catch(e) { console.warn('Firebase 기록 삭제 실패:', e); }
-    // MS 상태 초기화
     MS.playerId  = null;
     MS.roomCode  = null;
     MS.playerName = null;
@@ -3626,10 +3625,11 @@ async function confirmRestart() {
     if (MS.unsubPlayers) { MS.unsubPlayers(); MS.unsubPlayers = null; }
   }
 
-  // 멀티 모드면 모드 선택 화면으로, 혼자 플레이면 인트로로
+  // 학생 모드면 → 모드 선택 없이 바로 학생 접속 화면으로 (이전 이름·번호 자동 채우기)
   if (MS.mode === 'student') {
-    MS.mode = null;
-    msShowScreen('mode');
+    const prevName = MS.playerName || '';
+    const prevNum  = MS.playerNum  || '';
+    enterStudentModeWithPrevInfo(prevName, prevNum);
   } else {
     goHome();
   }
@@ -3713,6 +3713,19 @@ function enterStudentMode() {
   if (code) {
     document.getElementById('join-code-input').value = code.toUpperCase();
   }
+  msShowScreen('join');
+}
+
+// 다시하기 전용: 이전 정보 자동 채워서 바로 학생 접속 화면으로
+function enterStudentModeWithPrevInfo(prevName, prevNum) {
+  MS.mode = 'student';
+  // URL 파라미터 반코드 우선, 없으면 빈칸
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('room');
+  if (code) document.getElementById('join-code-input').value = code.toUpperCase();
+  // 이전 이름·번호 자동 채우기
+  if (prevName) document.getElementById('join-name-input').value = prevName;
+  if (prevNum)  document.getElementById('join-num-input').value  = prevNum;
   msShowScreen('join');
 }
 
