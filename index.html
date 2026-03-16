@@ -1178,8 +1178,9 @@ body {
 /* ══════════ WAITING SCREEN (학생) ══════════ */
 #screen-waiting {
   height: 100%; display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  padding: 2rem 1.2rem; gap: 1.2rem;
+  align-items: center;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 1.8rem 1.2rem 3rem; gap: 1rem;
 }
 .waiting-icon { font-size: 3.5rem; animation: symbolPulse 2s ease-in-out infinite; }
 .waiting-title { font-family:'Jua',sans-serif; font-size: 1.4rem; text-align: center; }
@@ -1434,13 +1435,128 @@ body {
 
 <!-- ══ WAITING (학생 대기) ══ -->
 <div id="screen-waiting" class="screen">
+
+  <!-- 상단: 대기 상태 -->
   <div class="waiting-icon">⏳</div>
   <div class="waiting-title">선생님을 기다리는 중...</div>
   <div class="waiting-room" id="waiting-room-display"></div>
   <div class="waiting-name" id="waiting-name-display"></div>
   <div class="waiting-sub">선생님이 게임을 시작하면<br>자동으로 시작됩니다!</div>
   <div class="waiting-spinner"></div>
-  <div id="waiting-sub-status" style="font-size:.75rem;color:var(--muted);text-align:center;margin-top:.5rem;">연결 중...</div>
+  <div id="waiting-sub-status" style="font-size:.75rem;color:var(--muted);text-align:center">연결 중...</div>
+
+  <!-- 구분선 -->
+  <div style="width:100%;max-width:360px;height:1px;background:var(--border);margin:.3rem 0"></div>
+  <div style="font-size:.75rem;color:var(--muted);text-align:center;letter-spacing:.05em">
+    📖 게임을 시작하기 전에 읽어보세요!
+  </div>
+
+  <!-- 게임 소개 카드 -->
+  <div style="width:100%;max-width:360px;background:var(--surface);border-radius:20px;
+    border:1px solid var(--border);padding:1.2rem;box-shadow:0 4px 20px rgba(0,0,0,.3)">
+    <div style="font-family:'Jua',sans-serif;font-size:1rem;color:var(--gold);
+      margin-bottom:.8rem;text-align:center">♿ 장애인식개선 보드게임</div>
+
+    <div style="font-size:.8rem;color:var(--muted);line-height:1.7;margin-bottom:.9rem;
+      text-align:center;word-break:keep-all">
+      퀴즈를 풀며 말판을 완주하는 게임이에요.<br>
+      장애에 대해 올바르게 이해하고<br>함께 살아가는 태도를 키워봐요!
+    </div>
+
+    <!-- 말판 구조 -->
+    <div style="font-size:.78rem;font-weight:700;color:var(--primary);margin-bottom:.5rem">🗺️ 말판 구조</div>
+    <div style="font-size:.78rem;color:var(--muted);line-height:1.6;margin-bottom:.9rem;
+      padding:.55rem .7rem;background:rgba(255,255,255,.04);border-radius:10px">
+      총 <strong style="color:var(--text)">28칸</strong>의 말판을 <strong style="color:var(--text)">30턴</strong> 동안 이동해요.
+      출발 칸을 지날 때마다 <strong style="color:var(--gold)">+50점</strong> 보너스!
+    </div>
+
+    <!-- 칸 종류 -->
+    <div style="font-size:.78rem;font-weight:700;color:var(--primary);margin-bottom:.5rem">🎯 칸 종류</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.9rem">
+      <div style="padding:.45rem .6rem;background:linear-gradient(135deg,rgba(255,209,102,.15),rgba(247,127,0,.1));
+        border-radius:10px;border:1px solid rgba(255,209,102,.3)">
+        <div style="font-size:.75rem;font-weight:900;color:var(--gold)">🏁 출발 칸</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:.15rem">통과 시 +50점</div>
+      </div>
+      <div style="padding:.45rem .6rem;background:rgba(22,37,64,.8);
+        border-radius:10px;border:1px solid rgba(0,180,216,.3)">
+        <div style="font-size:.75rem;font-weight:900;color:var(--cyan)">📝 퀴즈 칸</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:.15rem">난이도 선택 후 풀기</div>
+      </div>
+      <div style="padding:.45rem .6rem;background:linear-gradient(135deg,rgba(155,93,229,.15),rgba(90,0,176,.1));
+        border-radius:10px;border:1px solid rgba(155,93,229,.3)">
+        <div style="font-size:.75rem;font-weight:900;color:var(--purple)">❓ 찬스 칸</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:.15rem">랜덤 이벤트 발생</div>
+      </div>
+      <div style="padding:.45rem .6rem;background:linear-gradient(135deg,rgba(247,127,0,.15),rgba(184,80,0,.1));
+        border-radius:10px;border:1px solid rgba(247,127,0,.3)">
+        <div style="font-size:.75rem;font-weight:900;color:var(--orange)">💰 황금 칸</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:.15rem">룰렛으로 보너스</div>
+      </div>
+      <div style="padding:.45rem .6rem;background:linear-gradient(135deg,rgba(26,107,58,.4),rgba(13,66,37,.3));
+        border-radius:10px;border:1px solid rgba(168,255,204,.2)">
+        <div style="font-size:.75rem;font-weight:900;color:#a8ffcc">🌿 배려 쉼터</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:.15rem">착지 시 1턴 쉬기</div>
+      </div>
+      <div style="padding:.45rem .6rem;background:linear-gradient(135deg,rgba(239,69,101,.15),rgba(139,0,40,.1));
+        border-radius:10px;border:1px solid rgba(239,69,101,.3)">
+        <div style="font-size:.75rem;font-weight:900;color:var(--red)">⛓️ 차별의 늪</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:.15rem">3연속 오답 시 입장</div>
+      </div>
+    </div>
+
+    <!-- 점수 체계 -->
+    <div style="font-size:.78rem;font-weight:700;color:var(--primary);margin-bottom:.5rem">⭐ 점수 체계</div>
+    <div style="display:flex;gap:.4rem;margin-bottom:.9rem">
+      <div style="flex:1;text-align:center;padding:.4rem;background:rgba(6,214,160,.1);
+        border-radius:10px;border:1px solid rgba(6,214,160,.25)">
+        <div style="font-size:.72rem;color:var(--green);font-weight:900">🟢 쉬움</div>
+        <div style="font-size:.85rem;font-family:'Jua',sans-serif;color:var(--green)">+10점</div>
+      </div>
+      <div style="flex:1;text-align:center;padding:.4rem;background:rgba(247,127,0,.1);
+        border-radius:10px;border:1px solid rgba(247,127,0,.25)">
+        <div style="font-size:.72rem;color:var(--orange);font-weight:900">🟡 보통</div>
+        <div style="font-size:.85rem;font-family:'Jua',sans-serif;color:var(--orange)">+20점</div>
+      </div>
+      <div style="flex:1;text-align:center;padding:.4rem;background:rgba(239,69,101,.1);
+        border-radius:10px;border:1px solid rgba(239,69,101,.25)">
+        <div style="font-size:.72rem;color:var(--red);font-weight:900">🔴 어려움</div>
+        <div style="font-size:.85rem;font-family:'Jua',sans-serif;color:var(--red)">+30점</div>
+      </div>
+    </div>
+
+    <!-- 퀴즈 카테고리 -->
+    <div style="font-size:.78rem;font-weight:700;color:var(--primary);margin-bottom:.5rem">📚 퀴즈 카테고리 (10가지)</div>
+    <div style="display:flex;flex-wrap:wrap;gap:.3rem">
+      <span style="font-size:.7rem;padding:.2rem .5rem;background:rgba(61,123,255,.12);
+        border:1px solid rgba(61,123,255,.25);border-radius:20px;color:var(--text)">🤝 장애 에티켓</span>
+      <span style="font-size:.7rem;padding:.2rem .5rem;background:rgba(61,123,255,.12);
+        border:1px solid rgba(61,123,255,.25);border-radius:20px;color:var(--text)">🧩 장애 특성</span>
+      <span style="font-size:.7rem;padding:.2rem .5rem;background:rgba(61,123,255,.12);
+        border:1px solid rgba(61,123,255,.25);border-radius:20px;color:var(--text)">⠃⠗ 점자 미션</span>
+      <span style="font-size:.7rem;padding:.2rem .5rem;background:rgba(61,123,255,.12);
+        border:1px solid rgba(61,123,255,.25);border-radius:20px;color:var(--text)">🦾 보조공학</span>
+      <span style="font-size:.7rem;padding:.2rem .5rem;background:rgba(61,123,255,.12);
+        border:1px solid rgba(61,123,255,.25);border-radius:20px;color:var(--text)">⚖️ 장애인 권리</span>
+      <span style="font-size:.7rem;padding:.2rem .5rem;background:rgba(61,123,255,.12);
+        border:1px solid rgba(61,123,255,.25);border-radius:20px;color:var(--text)">❤️ 장애인식 개선</span>
+      <span style="font-size:.7rem;padding:.2rem .5rem;background:rgba(61,123,255,.12);
+        border:1px solid rgba(61,123,255,.25);border-radius:20px;color:var(--text)">🏫 특수학급</span>
+      <span style="font-size:.7rem;padding:.2rem .5rem;background:rgba(61,123,255,.12);
+        border:1px solid rgba(61,123,255,.25);border-radius:20px;color:var(--text)">🌈 통합교육</span>
+      <span style="font-size:.7rem;padding:.2rem .5rem;background:rgba(61,123,255,.12);
+        border:1px solid rgba(61,123,255,.25);border-radius:20px;color:var(--text)">🥇 패럴림픽</span>
+      <span style="font-size:.7rem;padding:.2rem .5rem;background:rgba(61,123,255,.12);
+        border:1px solid rgba(61,123,255,.25);border-radius:20px;color:var(--text)">🏗️ UD·배리어프리</span>
+    </div>
+  </div>
+
+  <!-- 하단 안내 -->
+  <div style="font-size:.75rem;color:var(--muted);text-align:center;line-height:1.6;padding-bottom:.5rem">
+    © 천안가온중학교 교사 신하영
+  </div>
+
 </div>
 
 
