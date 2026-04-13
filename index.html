@@ -1308,7 +1308,7 @@ body {
   <div class="teacher-card" id="qr-card" style="display:none">
     <h3>📱 학생 접속 QR코드</h3>
     <div class="qr-wrap">
-      <canvas id="qr-canvas" width="180" height="180"></canvas>
+      <canvas id="qr-canvas" width="220" height="220"></canvas>
       <div class="qr-code-text" id="qr-room-display"></div>
       <div class="qr-hint">학생들이 QR코드를 스캔하거나<br>위 코드를 직접 입력하면 접속됩니다</div>
     </div>
@@ -1372,7 +1372,7 @@ body {
       gap:.7rem;padding:1rem;background:var(--surface);border-radius:14px;
       border:1px solid var(--border);margin-top:.5rem">
       <div style="font-size:.8rem;color:var(--muted)">중간에 나간 학생은 아래 QR로 재접속하세요</div>
-      <canvas id="rejoin-qr-canvas" width="160" height="160" style="border-radius:10px"></canvas>
+      <canvas id="rejoin-qr-canvas" width="220" height="220" style="border-radius:10px"></canvas>
       <div style="font-family:'Jua',sans-serif;font-size:1.3rem;color:var(--primary);letter-spacing:.15em" id="rejoin-code-display"></div>
     </div>
   </div>
@@ -4239,20 +4239,23 @@ function drawQROnCanvas(canvas, text) {
     const tempDiv = document.createElement('div');
     new QRCode(tempDiv, {
       text: text,
-      width: 180, height: 180,
-      colorDark: '#ffffff', colorLight: '#111E35',
+      width: 200, height: 200,
+      colorDark: '#000000', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.L,  // 오류 수정 최저(7%) → QR 단순화
     });
     setTimeout(() => {
       const img = tempDiv.querySelector('img') || tempDiv.querySelector('canvas');
       if (img) {
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#111E35';
-        ctx.fillRect(0, 0, 180, 180);
+        const cw = canvas.width, ch = canvas.height;
+        // 흰 배경 → 스캔 인식률 향상
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, cw, ch);
         if (img.tagName === 'CANVAS') {
-          ctx.drawImage(img, 0, 0, 180, 180);
+          ctx.drawImage(img, 0, 0, cw, ch);
         } else {
           const i = new Image();
-          i.onload = () => ctx.drawImage(i, 0, 0, 180, 180);
+          i.onload = () => ctx.drawImage(i, 0, 0, cw, ch);
           i.src = img.src;
         }
       }
