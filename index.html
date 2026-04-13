@@ -3664,9 +3664,11 @@ function endTurn() {
 
 // 게임 종료
 async function endGame() {
+  // 방 상태 감시 중단 (교사 종료 감지 루프 정리)
+  if (MS.stopRoomWatch) { MS.stopRoomWatch(); MS.stopRoomWatch = null; }
   setRollBtn(true);
-  SFX.stopBGM();       // BGM 정지
-  SFX.gameEnd();       // 🏆 엔딩 팡파레
+  SFX.stopBGM();
+  SFX.gameEnd();
   await saveRanking(gs.playerName, gs.score, gs.laps, gs.stats);
   showResultScreen();
 }
@@ -4049,7 +4051,13 @@ function closeRestartConfirm() {
 
 async function confirmRestart() {
   closeRestartConfirm();
-  SFX.stopBGM(); // BGM 정지
+  SFX.stopBGM();
+
+  // ★ 먼저 값을 저장해두고 나서 MS 초기화
+  const prevName    = MS.playerName || '';
+  const prevNum     = MS.playerNum  || '';
+  const prevRoom    = MS.roomCode   || '';
+  const wasStudent  = MS.mode === 'student';
 
   // 멀티 모드(학생)일 때 Firebase 기록 삭제
   if (window._db && MS.playerId && MS.roomCode) {
@@ -4058,20 +4066,28 @@ async function confirmRestart() {
         window._doc(window._db, 'rooms', MS.roomCode, 'players', MS.playerId)
       );
     } catch(e) { console.warn('Firebase 기록 삭제 실패:', e); }
-    MS.playerId  = null;
-    MS.roomCode  = null;
-    MS.playerName = null;
-    MS.playerNum  = null;
-    if (MS.unsubRoom)    { MS.unsubRoom();    MS.unsubRoom    = null; }
-    if (MS.unsubPlayers) { MS.unsubPlayers(); MS.unsubPlayers = null; }
-    if (MS.stopPoll)     { MS.stopPoll();     MS.stopPoll     = null; } // 폴링 중단
   }
 
-  // 학생 모드면 → 모드 선택 없이 바로 학생 접속 화면으로 (이전 이름·번호 자동 채우기)
-  if (MS.mode === 'student') {
-    const prevName = MS.playerName || '';
-    const prevNum  = MS.playerNum  || '';
-    enterStudentModeWithPrevInfo(prevName, prevNum);
+  // MS 상태 초기화
+  MS.playerId   = null;
+  MS.roomCode   = null;
+  MS.playerName = null;
+  MS.playerNum  = null;
+  if (MS.unsubRoom)      { MS.unsubRoom();       MS.unsubRoom      = null; }
+  if (MS.unsubPlayers)   { MS.unsubPlayers();    MS.unsubPlayers   = null; }
+  if (MS.stopPoll)       { MS.stopPoll();        MS.stopPoll       = null; }
+  if (MS.stopRoomWatch)  { MS.stopRoomWatch();   MS.stopRoomWatch  = null; } // ★ 게임 중 감시 중단
+
+  // ★ 스로틀 타이머 초기화 (이전 점수가 새 게임에 전송되지 않도록)
+  if (typeof _scoreThrottleTimer !== 'undefined' && _scoreThrottleTimer) {
+    clearTimeout(_scoreThrottleTimer);
+    _scoreThrottleTimer = null;
+    _pendingScore = null;
+  }
+
+  // 학생 모드면 → 이전 이름·번호·반코드 자동 채워서 바로 접속 화면으로
+  if (wasStudent) {
+    enterStudentModeWithPrevInfo(prevName, prevNum, prevRoom);
   } else {
     goHome();
   }
@@ -4159,12 +4175,13 @@ function enterStudentMode() {
 }
 
 // 다시하기 전용: 이전 정보 자동 채워서 바로 학생 접속 화면으로
-function enterStudentModeWithPrevInfo(prevName, prevNum) {
+function enterStudentModeWithPrevInfo(prevName, prevNum, prevRoom) {
   MS.mode = 'student';
-  // URL 파라미터 반코드 우선, 없으면 빈칸
+  // URL 파라미터 반코드 우선, 없으면 이전 반코드, 그것도 없으면 빈칸
   const params = new URLSearchParams(window.location.search);
-  const code = params.get('room');
-  if (code) document.getElementById('join-code-input').value = code.toUpperCase();
+  const urlCode = params.get('room');
+  const roomCode = urlCode || prevRoom || '';
+  if (roomCode) document.getElementById('join-code-input').value = roomCode.toUpperCase();
   // 이전 이름·번호 자동 채우기
   if (prevName) document.getElementById('join-name-input').value = prevName;
   if (prevNum)  document.getElementById('join-num-input').value  = prevNum;
@@ -5028,6 +5045,9 @@ function startGameFromRoom() {
       ).catch(function(e) { console.warn('status 업데이트 실패:', e); });
     }
 
+    // ★ 게임 중 방 상태 감시 — 교사가 종료하면 즉시 결과 화면으로
+    listenRoomStatusDuringGame(MS.roomCode);
+
     // 실시간 랭킹 수신 시작
     listenRoomRankings();
 
@@ -5038,6 +5058,42 @@ function startGameFromRoom() {
 }
 
 // ── 학생: 방 내 랭킹 수신 ──
+// ── 게임 중 방 상태 감시 (교사 종료 감지) ──
+function listenRoomStatusDuringGame(code) {
+  if (!code) return;
+  let _stopped = false;
+  let _timer   = null;
+
+  MS.stopRoomWatch = () => {
+    _stopped = true;
+    if (_timer) { clearTimeout(_timer); _timer = null; }
+  };
+
+  async function watch() {
+    if (_stopped || !window._db) return;
+    try {
+      const snap = await window._getDoc(window._doc(window._db, 'rooms', code));
+      if (_stopped) return;
+
+      if (!snap.exists() || snap.data().status === 'done') {
+        // 교사가 게임 종료 → 현재 상태로 바로 결과 화면
+        _stopped = true;
+        SFX.stopBGM();
+        // 퀴즈/모달이 열려있으면 닫기
+        document.querySelectorAll('.modal-overlay.open, .confirm-overlay.open')
+          .forEach(m => m.classList.remove('open'));
+        showToast('📢 선생님이 게임을 종료했어요!');
+        setTimeout(() => endGame(), 1200); // 토스트 보여주고 결과 화면
+        return;
+      }
+    } catch(e) { /* 네트워크 오류 무시하고 계속 감시 */ }
+
+    _timer = setTimeout(watch, 5000); // 5초마다 감시
+  }
+
+  watch();
+}
+
 function listenRoomRankings() {
   // ★ 학생 게임 중에는 실시간 랭킹 리스너 불필요
   // → 게임 종료 후 결과 화면에서 1회 조회로 변경 (연결 수 절감)
