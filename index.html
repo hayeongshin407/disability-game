@@ -4885,47 +4885,63 @@ async function joinRoom() {
 
 // ── 학생: 게임 시작 대기 ──
 function listenGameStart(code) {
-  // ★ onSnapshot 대신 폴링 방식 사용 → Firebase 동시 연결 수 대폭 절감
-  // 900명이 동시 접속해도 연결 유지 없이 주기적 읽기만 발생
-  let _pollTimer = null;
-  let _pollInterval = 3000; // 3초마다 확인
+  // ★ onSnapshot 대신 폴링 방식 — Firebase 동시 연결 수 절감
+  let _stopped = false;
+  let _timer   = null;
+  let _interval = 3000;
 
   const subEl = document.getElementById('waiting-sub-status');
 
+  // 외부에서 폴링 중단할 수 있도록 MS에 등록
+  MS.stopPoll = () => {
+    _stopped = true;
+    if (_timer) { clearTimeout(_timer); _timer = null; }
+  };
+
   async function poll() {
+    if (_stopped) return;
     if (!window._db) {
-      _pollTimer = setTimeout(poll, 500);
+      _timer = setTimeout(poll, 500);
       return;
     }
     try {
       const snap = await window._getDoc(window._doc(window._db, 'rooms', code));
+      if (_stopped) return; // 조회 중 중단된 경우
+
       if (!snap.exists()) {
         if (subEl) subEl.textContent = '⚠️ 방을 찾을 수 없어요';
-        _pollTimer = setTimeout(poll, _pollInterval);
+        _timer = setTimeout(poll, _interval);
         return;
       }
+
       const data = snap.data();
-      if (subEl) subEl.textContent = '🔗 연결됨 · 선생님 대기 중...';
 
       if (data.status === 'playing') {
-        clearTimeout(_pollTimer);
+        // 게임 진행 중 → 재접속이든 첫 접속이든 바로 게임 시작
+        _stopped = true;
+        if (subEl) subEl.textContent = '🎮 게임 시작!';
         startGameFromRoom();
         return;
       }
-      // 아직 대기 중 → 계속 폴링
-      _pollTimer = setTimeout(poll, _pollInterval);
+
+      if (data.status === 'done') {
+        if (subEl) subEl.textContent = '⚠️ 이미 종료된 게임이에요';
+        return;
+      }
+
+      // 대기 중
+      if (subEl) subEl.textContent = '🔗 연결됨 · 선생님 대기 중...';
+      _timer = setTimeout(poll, _interval);
+
     } catch(e) {
+      if (_stopped) return;
       if (subEl) subEl.textContent = '⚠️ 연결 재시도 중...';
-      _pollInterval = Math.min(_pollInterval * 1.5, 10000); // 오류 시 간격 늘리기
-      _pollTimer = setTimeout(poll, _pollInterval);
+      _interval = Math.min(_interval * 1.5, 10000);
+      _timer = setTimeout(poll, _interval);
     }
   }
 
-  // MS에 타이머 참조 저장 (화면 이탈 시 정리)
-  MS.pollTimer = _pollTimer;
-  MS.stopPoll  = () => clearTimeout(_pollTimer);
-
-  poll(); // 시작
+  poll();
 }
 
 // ── 학생: 방에서 게임 시작 ──
