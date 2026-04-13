@@ -4178,12 +4178,27 @@ async function createRoom() {
 
   const btn = document.getElementById('btn-create-room');
   btn.disabled = true;
-  btn.textContent = '생성 중...';
+  btn.textContent = '확인 중...';
 
   try {
     if (window._fbReady && window._db) {
       const db = window._db;
       const roomRef = window._doc(db, 'rooms', code);
+
+      // ★ 이미 존재하는 방인지 확인
+      const existing = await window._getDoc(roomRef);
+      if (existing.exists()) {
+        const data = existing.data();
+        // 진행 중인 방(waiting/playing)이면 생성 차단
+        if (data.status === 'waiting' || data.status === 'playing') {
+          const statusTxt = data.status === 'playing' ? '게임이 진행 중인' : '대기 중인';
+          alert(`⚠️ '${code}' 코드는 이미 ${statusTxt} 방이 있어요!\n\n다른 반 코드를 사용해주세요.\n(예: 학년-반 형식, 1-3 / 2-5 등)`);
+          btn.disabled = false;
+          btn.textContent = '방 만들기';
+          return;
+        }
+        // 종료된 방(done)이면 데이터 정리 후 새로 생성
+      }
 
       // 기존 players 데이터 전부 삭제
       const oldPlayers = await window._getDocs(window._collection(db, 'rooms', code, 'players'));
@@ -4191,7 +4206,7 @@ async function createRoom() {
       oldPlayers.forEach(d => delPromises.push(window._deleteDoc(d.ref)));
       await Promise.all(delPromises);
 
-      // 방 문서 새로 덮어쓰기
+      // 방 문서 새로 생성
       await window._setDoc(roomRef, {
         code: code,
         status: 'waiting',
