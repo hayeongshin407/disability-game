@@ -3690,8 +3690,34 @@ function showResultScreen() {
   `;
 
   renderRankings('rank-list-result', gs.playerName, gs.score);
-  renderWrongReview();   // ★ 오답 복습 섹션 렌더
-  showScreen('result'); syncGameDoneToFirebase();
+  renderWrongReview();
+  showScreen('result');
+  syncGameDoneToFirebase();
+  // ★ 게임 종료 후 랭킹 1회 조회 (실시간 리스너 대신)
+  if (MS.roomCode) fetchRoomRankingsOnce();
+}
+
+// 게임 종료 시 랭킹 1회만 읽기
+async function fetchRoomRankingsOnce() {
+  if (!window._db || !MS.roomCode) return;
+  try {
+    const snap = await window._getDocs(
+      window._query(
+        window._collection(window._db, 'rooms', MS.roomCode, 'players'),
+        window._orderBy('score', 'desc')
+      )
+    );
+    const rankings = [];
+    snap.forEach(d => rankings.push({ id: d.id, ...d.data() }));
+    gs.rankings = rankings.map(p => ({
+      name:  `${p.num ? p.num + '번 ' : ''}${p.name}`,
+      score: p.score || 0,
+      grade: MS.roomCode.split('-')[0] || '',
+      cls:   MS.roomCode.split('-')[1] || '',
+      date:  '',
+    }));
+    renderRankings('rank-list-result', gs.playerName, gs.score);
+  } catch(e) { console.warn('랭킹 조회 실패:', e); }
 }
 
 // 점수 공유
@@ -4038,6 +4064,7 @@ async function confirmRestart() {
     MS.playerNum  = null;
     if (MS.unsubRoom)    { MS.unsubRoom();    MS.unsubRoom    = null; }
     if (MS.unsubPlayers) { MS.unsubPlayers(); MS.unsubPlayers = null; }
+    if (MS.stopPoll)     { MS.stopPoll();     MS.stopPoll     = null; } // 폴링 중단
   }
 
   // 학생 모드면 → 모드 선택 없이 바로 학생 접속 화면으로 (이전 이름·번호 자동 채우기)
@@ -4855,39 +4882,47 @@ async function joinRoom() {
 
 // ── 학생: 게임 시작 대기 ──
 function listenGameStart(code) {
-  function startListening() {
+  // ★ onSnapshot 대신 폴링 방식 사용 → Firebase 동시 연결 수 대폭 절감
+  // 900명이 동시 접속해도 연결 유지 없이 주기적 읽기만 발생
+  let _pollTimer = null;
+  let _pollInterval = 3000; // 3초마다 확인
+
+  const subEl = document.getElementById('waiting-sub-status');
+
+  async function poll() {
     if (!window._db) {
-      setTimeout(startListening, 300);
+      _pollTimer = setTimeout(poll, 500);
       return;
     }
-    const db = window._db;
-    const roomRef = window._doc(db, 'rooms', code);
-
-    // 대기 화면에 상태 표시
-    const subEl = document.getElementById('waiting-sub-status');
-    if (subEl) subEl.textContent = '🔗 Firebase 연결됨 - 선생님 대기 중...';
-
-    MS.unsubRoom = window._onSnapshot(roomRef,
-      (snap) => {
-        if (!snap.exists()) {
-          if (subEl) subEl.textContent = '⚠️ 방을 찾을 수 없어요';
-          return;
-        }
-        const data = snap.data();
-        if (subEl) subEl.textContent = '상태: ' + data.status;
-        if (data.status === 'playing') {
-          if (MS.unsubRoom) { MS.unsubRoom(); MS.unsubRoom = null; }
-          startGameFromRoom();
-        }
-      },
-      (err) => {
-        if (subEl) subEl.textContent = '❌ 오류: ' + err.message;
-        // 3초 후 재시도
-        setTimeout(() => startListening(), 3000);
+    try {
+      const snap = await window._getDoc(window._doc(window._db, 'rooms', code));
+      if (!snap.exists()) {
+        if (subEl) subEl.textContent = '⚠️ 방을 찾을 수 없어요';
+        _pollTimer = setTimeout(poll, _pollInterval);
+        return;
       }
-    );
+      const data = snap.data();
+      if (subEl) subEl.textContent = '🔗 연결됨 · 선생님 대기 중...';
+
+      if (data.status === 'playing') {
+        clearTimeout(_pollTimer);
+        startGameFromRoom();
+        return;
+      }
+      // 아직 대기 중 → 계속 폴링
+      _pollTimer = setTimeout(poll, _pollInterval);
+    } catch(e) {
+      if (subEl) subEl.textContent = '⚠️ 연결 재시도 중...';
+      _pollInterval = Math.min(_pollInterval * 1.5, 10000); // 오류 시 간격 늘리기
+      _pollTimer = setTimeout(poll, _pollInterval);
+    }
   }
-  startListening();
+
+  // MS에 타이머 참조 저장 (화면 이탈 시 정리)
+  MS.pollTimer = _pollTimer;
+  MS.stopPoll  = () => clearTimeout(_pollTimer);
+
+  poll(); // 시작
 }
 
 // ── 학생: 방에서 게임 시작 ──
@@ -4970,36 +5005,34 @@ function startGameFromRoom() {
 
 // ── 학생: 방 내 랭킹 수신 ──
 function listenRoomRankings() {
-  if (!window._fbReady || !window._db || !MS.roomCode) return;
-  const db = window._db;
-  const playersRef = window._collection(db, 'rooms', MS.roomCode, 'players');
-  const q = window._query(playersRef, window._orderBy('score', 'desc'));
-
-  window._onSnapshot(q, (snap) => {
-    const rankings = [];
-    snap.forEach(d => rankings.push({ id: d.id, ...d.data() }));
-    gs.rankings = rankings.map(p => ({
-      name: `${p.num ? p.num + '번 ' : ''}${p.name}`,
-      score: p.score || 0,
-      grade: MS.roomCode.split('-')[0] || '',
-      cls: MS.roomCode.split('-')[1] || '',
-      date: '',
-    }));
-    // 인트로/결과 랭킹 업데이트
-    renderRankings('rank-list-intro');
-    renderRankings('rank-list-result', gs.playerName, gs.score);
-  });
+  // ★ 학생 게임 중에는 실시간 랭킹 리스너 불필요
+  // → 게임 종료 후 결과 화면에서 1회 조회로 변경 (연결 수 절감)
+  // 실제 랭킹은 showResultScreen에서 fetchRoomRankings()로 1회 읽기
 }
 
-// ── 점수 업데이트 (게임 중 호출) ──
+// ── 점수 업데이트 (스로틀: 3초에 1회만 전송) ──
+let _scoreThrottleTimer = null;
+let _pendingScore = null;
+
 async function syncScoreToFirebase() {
   if (!window._fbReady || !window._db || !MS.playerId || !MS.roomCode) return;
-  try {
-    await window._updateDoc(
-      window._doc(window._db, 'rooms', MS.roomCode, 'players', MS.playerId),
-      { score: gs.score }
-    );
-  } catch(e) { console.warn('점수 동기화 실패:', e); }
+
+  _pendingScore = gs.score;
+
+  // 이미 예약된 전송이 있으면 값만 갱신하고 대기
+  if (_scoreThrottleTimer) return;
+
+  _scoreThrottleTimer = setTimeout(async () => {
+    _scoreThrottleTimer = null;
+    if (_pendingScore === null) return;
+    try {
+      await window._updateDoc(
+        window._doc(window._db, 'rooms', MS.roomCode, 'players', MS.playerId),
+        { score: _pendingScore }
+      );
+      _pendingScore = null;
+    } catch(e) { console.warn('점수 동기화 실패:', e); }
+  }, 3000); // 3초 스로틀
 }
 
 // ── 게임 종료 시 Firebase 상태 업데이트 ──
