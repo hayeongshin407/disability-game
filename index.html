@@ -1272,8 +1272,31 @@ body {
     <div class="room-setup">
       <input type="text" class="field-input" id="room-code-input"
         placeholder="예: 1-3" maxlength="5"
-        oninput="this.value=this.value.toUpperCase()">
+        oninput="this.value=this.value.toUpperCase();hideRoomError()">
       <button class="btn-create-room" id="btn-create-room" onclick="createRoom()" aria-label="반 코드로 방 만들기">방 만들기</button>
+    </div>
+    <!-- 중복 방 안내 (평소엔 숨김) -->
+    <div id="room-error-box" style="display:none;margin-top:.8rem;padding:.8rem 1rem;
+      background:rgba(239,69,101,.1);border:1px solid rgba(239,69,101,.3);
+      border-radius:12px;font-size:.82rem;line-height:1.7">
+      <div style="color:var(--red);font-weight:700;margin-bottom:.4rem">⚠️ 이미 사용 중인 반 코드예요</div>
+      <div style="color:var(--muted)" id="room-error-msg"></div>
+      <div style="display:flex;gap:.5rem;margin-top:.7rem">
+        <button onclick="createRoom(true)"
+          style="flex:1;padding:.55rem;border-radius:10px;border:none;
+          background:rgba(239,69,101,.8);color:#fff;font-weight:700;
+          font-size:.82rem;cursor:pointer">
+          🔄 기존 방 삭제 후 새로 시작
+        </button>
+        <button onclick="hideRoomError()"
+          style="padding:.55rem .9rem;border-radius:10px;border:1px solid var(--border);
+          background:transparent;color:var(--muted);font-size:.82rem;cursor:pointer">
+          취소
+        </button>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);margin-top:.5rem">
+        💡 이전 수업 데이터가 남아있을 때 눌러주세요
+      </div>
     </div>
   </div>
 
@@ -4190,34 +4213,40 @@ function enterStudentModeWithPrevInfo(prevName, prevNum, prevRoom) {
 
 // ── 선생님: 방 만들기 ──
 async function createRoom() {
+async function createRoom(forceOverwrite = false) {
   const code = document.getElementById('room-code-input').value.trim().toUpperCase();
   if (!code) { alert('반 코드를 입력해주세요! (예: 1-3)'); return; }
 
   const btn = document.getElementById('btn-create-room');
   btn.disabled = true;
   btn.textContent = '확인 중...';
+  hideRoomError();
 
   try {
     if (window._fbReady && window._db) {
       const db = window._db;
       const roomRef = window._doc(db, 'rooms', code);
 
-      // ★ 이미 존재하는 방인지 확인
-      const existing = await window._getDoc(roomRef);
-      if (existing.exists()) {
-        const data = existing.data();
-        // 진행 중인 방(waiting/playing)이면 생성 차단
-        if (data.status === 'waiting' || data.status === 'playing') {
-          const statusTxt = data.status === 'playing' ? '게임이 진행 중인' : '대기 중인';
-          alert(`⚠️ '${code}' 코드는 이미 ${statusTxt} 방이 있어요!\n\n다른 반 코드를 사용해주세요.\n(예: 학년-반 형식, 1-3 / 2-5 등)`);
-          btn.disabled = false;
-          btn.textContent = '방 만들기';
-          return;
+      // 이미 존재하는 방인지 확인 (강제 덮어쓰기가 아닐 때만)
+      if (!forceOverwrite) {
+        const existing = await window._getDoc(roomRef);
+        if (existing.exists()) {
+          const data = existing.data();
+          if (data.status === 'waiting' || data.status === 'playing') {
+            const statusTxt = data.status === 'playing'
+              ? '게임이 진행 중인 방이에요. 다른 선생님이 사용 중일 수 있어요.'
+              : '대기 중인 방이에요. 이전 수업 데이터가 남아있을 수 있어요.';
+            // alert 대신 인라인 안내 표시
+            showRoomError(code, statusTxt);
+            btn.disabled = false;
+            btn.textContent = '방 만들기';
+            return;
+          }
         }
-        // 종료된 방(done)이면 데이터 정리 후 새로 생성
       }
 
       // 기존 players 데이터 전부 삭제
+      btn.textContent = '준비 중...';
       const oldPlayers = await window._getDocs(window._collection(db, 'rooms', code, 'players'));
       const delPromises = [];
       oldPlayers.forEach(d => delPromises.push(window._deleteDoc(d.ref)));
@@ -4244,6 +4273,19 @@ async function createRoom() {
     btn.disabled = false;
     btn.textContent = '방 만들기';
   }
+}
+
+function showRoomError(code, msg) {
+  const box   = document.getElementById('room-error-box');
+  const msgEl = document.getElementById('room-error-msg');
+  if (!box) return;
+  if (msgEl) msgEl.textContent = `'${code}' 반 코드: ${msg}`;
+  box.style.display = 'block';
+}
+
+function hideRoomError() {
+  const box = document.getElementById('room-error-box');
+  if (box) box.style.display = 'none';
 }
 
 function setupRoomUI(code) {
