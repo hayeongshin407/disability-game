@@ -4212,7 +4212,6 @@ function enterStudentModeWithPrevInfo(prevName, prevNum, prevRoom) {
 }
 
 // ── 선생님: 방 만들기 ──
-async function createRoom() {
 async function createRoom(forceOverwrite = false) {
   const code = document.getElementById('room-code-input').value.trim().toUpperCase();
   if (!code) { alert('반 코드를 입력해주세요! (예: 1-3)'); return; }
